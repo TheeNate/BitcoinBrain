@@ -1,0 +1,400 @@
+openapi: 3.0.0
+info:
+  title: Bitcoin Knowledge Store API
+  description: A FastAPI service for ingesting Bitcoin analysis PDFs from S3, creating vector embeddings for semantic search, and providing intelligent document retrieval for market analysis
+  version: 1.0.0
+  contact:
+    name: Bitcoin Analysis Team
+servers:
+  - url: https://your-api-domain.com
+    description: Production server
+  - url: http://localhost:8000
+    description: Development server
+
+paths:
+  /tool/ingest_document:
+    post:
+      summary: Ingest Bitcoin Analysis Document
+      description: Process a PDF from S3 into searchable chunks with vector embeddings for semantic search
+      operationId: ingestDocument
+      tags:
+        - Document Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - s3_key
+                - title
+                - author
+                - kind
+                - published_date
+              properties:
+                s3_key:
+                  type: string
+                  description: S3 key path to the PDF document
+                  example: "raw/2025/08/glassnode-weekly-31.pdf"
+                title:
+                  type: string
+                  description: Document title
+                  example: "Glassnode Week On-chain 31-2025"
+                author:
+                  type: string
+                  description: Document author or organization
+                  example: "Glassnode"
+                kind:
+                  type: string
+                  enum: [newsletter, masterclass, report]
+                  description: Type of Bitcoin analysis document
+                  example: "newsletter"
+                published_date:
+                  type: string
+                  format: date
+                  description: Publication date in YYYY-MM-DD format
+                  example: "2025-08-01"
+                tags:
+                  type: array
+                  items:
+                    type: string
+                  description: Categorization tags for the document
+                  example: ["weekly", "on-chain", "glassnode", "bitcoin"]
+      responses:
+        '200':
+          description: Document successfully processed and ingested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  document_id:
+                    type: string
+                    description: Unique identifier for the ingested document
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  chunk_count:
+                    type: integer
+                    description: Number of searchable chunks created
+                    example: 24
+                  message:
+                    type: string
+                    example: "Document processed successfully with 24 searchable chunks"
+                  processing_details:
+                    type: object
+                    properties:
+                      total_pages:
+                        type: integer
+                        example: 12
+                      text_pages:
+                        type: integer
+                        example: 11
+                      has_tables:
+                        type: boolean
+                        example: true
+                      needs_ocr:
+                        type: boolean
+                        example: false
+        '400':
+          description: Invalid request parameters
+        '404':
+          description: PDF not found in S3
+        '500':
+          description: Processing failed
+
+  /tool/search_knowledge:
+    post:
+      summary: Search Bitcoin Knowledge Base
+      description: Perform semantic search across all ingested Bitcoin analysis documents using vector similarity
+      operationId: searchKnowledge
+      tags:
+        - Search & Retrieval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                  description: Search query for Bitcoin analysis insights
+                  example: "What indicators suggest a Bitcoin distribution phase?"
+                k:
+                  type: integer
+                  minimum: 1
+                  maximum: 50
+                  default: 8
+                  description: Number of results to return
+                filter_tags:
+                  type: array
+                  items:
+                    type: string
+                  description: Filter results by specific tags
+                  example: ["on-chain", "weekly"]
+                filter_kind:
+                  type: string
+                  enum: [newsletter, masterclass, report]
+                  description: Filter by document type
+                  example: "newsletter"
+      responses:
+        '200':
+          description: Search results with relevant Bitcoin analysis chunks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        text:
+                          type: string
+                          description: Relevant text chunk from Bitcoin analysis
+                          example: "The MVRV ratio above 3.0 combined with declining exchange inflows suggests early distribution phase characteristics..."
+                        document_title:
+                          type: string
+                          example: "Glassnode Week On-chain 31-2025"
+                        author:
+                          type: string
+                          example: "Glassnode"
+                        published_date:
+                          type: string
+                          format: date
+                          example: "2025-08-01"
+                        page:
+                          type: integer
+                          nullable: true
+                          example: 4
+                        section:
+                          type: string
+                          nullable: true
+                          example: "Distribution Signals"
+                        relevance_score:
+                          type: number
+                          format: float
+                          description: Cosine similarity score (0-1)
+                          example: 0.89
+                        document_id:
+                          type: string
+                          example: "550e8400-e29b-41d4-a716-446655440000"
+                  query:
+                    type: string
+                    example: "What indicators suggest a Bitcoin distribution phase?"
+                  total_results:
+                    type: integer
+                    example: 8
+        '400':
+          description: Invalid search parameters
+        '500':
+          description: Search operation failed
+
+  /tool/list_documents:
+    get:
+      summary: Browse Bitcoin Document Archive
+      description: List and filter through the archive of ingested Bitcoin analysis documents
+      operationId: listDocuments
+      tags:
+        - Document Management
+      parameters:
+        - name: kind
+          in: query
+          description: Filter by document type
+          schema:
+            type: string
+            enum: [newsletter, masterclass, report]
+          example: newsletter
+        - name: tags
+          in: query
+          description: Comma-separated tags to filter by
+          schema:
+            type: string
+          example: "on-chain,weekly"
+        - name: search
+          in: query
+          description: Text search in document titles
+          schema:
+            type: string
+          example: "Glassnode"
+        - name: limit
+          in: query
+          description: Maximum number of results
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          description: Number of results to skip (pagination)
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: List of Bitcoin analysis documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          example: "550e8400-e29b-41d4-a716-446655440000"
+                        title:
+                          type: string
+                          example: "Glassnode Week On-chain 31-2025"
+                        author:
+                          type: string
+                          example: "Glassnode"
+                        kind:
+                          type: string
+                          example: "newsletter"
+                        published_date:
+                          type: string
+                          format: date
+                          example: "2025-08-01"
+                        tags:
+                          type: array
+                          items:
+                            type: string
+                          example: ["weekly", "on-chain", "bitcoin"]
+                        status:
+                          type: string
+                          example: "completed"
+                        chunk_count:
+                          type: integer
+                          example: 24
+                        created_at:
+                          type: string
+                          format: date-time
+                  total_count:
+                    type: integer
+                    example: 156
+                  offset:
+                    type: integer
+                    example: 0
+                  limit:
+                    type: integer
+                    example: 50
+        '400':
+          description: Invalid filter parameters
+
+  /tool/log_observation:
+    post:
+      summary: Log Bitcoin Market Analysis Observation
+      description: Store daily Bitcoin market analysis observations with indicator states and interpretations
+      operationId: logObservation
+      tags:
+        - Analysis Tracking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - indicators
+                - states
+                - interpretation
+              properties:
+                indicators:
+                  type: object
+                  description: Current Bitcoin market indicator values
+                  example:
+                    mvrv_z: 2.7
+                    sth_sopr: 1.01
+                    nupl: 0.65
+                    reserve_risk: 0.003
+                states:
+                  type: object
+                  description: Interpretation of each indicator state
+                  example:
+                    mvrv_z: "neutral"
+                    sth_sopr: "weak"
+                    nupl: "optimism"
+                    reserve_risk: "accumulation"
+                interpretation:
+                  type: string
+                  description: Overall market interpretation and thesis
+                  example: "Market showing signs of early distribution phase with weakening short-term holder behavior despite neutral MVRV levels"
+                counter_read:
+                  type: string
+                  description: Alternative interpretation or counter-thesis
+                  example: "However, strong institutional accumulation and favorable macro conditions suggest continued upside potential"
+                bias_check:
+                  type: string
+                  description: Acknowledgment of potential analytical bias
+                  example: "Confirming my bearish bias - need to watch for invalidation signals in exchange flows"
+                session_label:
+                  type: string
+                  default: "Analysis Session"
+                  description: Label for this analysis session
+                  example: "Daily AM Analysis"
+                referenced_documents:
+                  type: array
+                  items:
+                    type: string
+                  description: IDs of documents referenced in this analysis
+                  example: ["550e8400-e29b-41d4-a716-446655440000"]
+      responses:
+        '200':
+          description: Observation successfully logged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  observation_id:
+                    type: string
+                    description: Unique identifier for the logged observation
+                    example: "660e8400-e29b-41d4-a716-446655440001"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: When the observation was recorded
+                  message:
+                    type: string
+                    example: "Observation logged successfully"
+        '400':
+          description: Invalid observation data
+        '500':
+          description: Failed to log observation
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        detail:
+          type: string
+          description: Detailed error information
+        error_type:
+          type: string
+          description: Type of error that occurred
+
+tags:
+  - name: Document Management
+    description: Operations for ingesting and managing Bitcoin analysis documents
+  - name: Search & Retrieval
+    description: Semantic search operations across the Bitcoin knowledge base
+  - name: Analysis Tracking
+    description: Tools for logging and tracking Bitcoin market analysis observations
