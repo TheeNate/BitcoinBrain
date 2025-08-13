@@ -85,3 +85,12 @@ Centralized configuration system using environment variables for:
 - **Environment Variables**: All sensitive configuration managed through environment variables
 - **CORS Support**: Configured for ChatGPT integration and local development
 - **Logging**: Structured logging throughout the application for monitoring and debugging
+- **Cloud Run Deployment**: Configured with proper PORT environment variable support
+- **Health Checks**: Multiple endpoints (/ and /health) for deployment health verification
+- **Docker Support**: Dockerfile included for containerized deployments
+
+### Deployment Configuration
+- **Run Command**: `uvicorn main:app --host 0.0.0.0 --port 5000` (fixed from generic $file variable)
+- **Port Configuration**: Uses PORT environment variable for Cloud Run, fallbacks to 5000
+- **Health Endpoints**: Root (/) and /health endpoints for deployment health checks
+- **Alternative Runners**: run.py script for explicit deployment scenarios
