@@ -1,0 +1,261 @@
+# Build a Knowledge Store API for Bitcoin Analysis Archive
+
+## Project Goal
+Create a FastAPI service that ingests Bitcoin analysis PDFs from S3, stores them in Supabase with vector embeddings for semantic search, and provides a knowledge base for daily market analysis. This will complement an existing Bitcoin metrics proxy by adding contextual knowledge from newsletters, reports, and masterclasses.
+
+## Core Requirements
+
+### Stack & Dependencies
+- **FastAPI** with async support
+- **Supabase** client for Python (for vector database operations)  
+- **boto3** for S3 operations
+- **PyPDF2** or **pdfplumber** for PDF text extraction
+- **tiktoken** for accurate token counting
+- **openai** for generating embeddings (text-embedding-3-small, 1536 dimensions)
+- **httpx** for async HTTP operations
+- **pydantic** for request/response validation
+- **uvicorn** for serving
+
+### Environment Variables Required
+```
+SUPABASE_URL=<from Supabase dashboard>
+SUPABASE_SERVICE_ROLE_KEY=<from Supabase dashboard>
+OPENAI_API_KEY=<for embeddings>
+AWS_ACCESS_KEY_ID=<for S3>
+AWS_SECRET_ACCESS_KEY=<for S3>
+AWS_REGION=<e.g., us-west-2>
+S3_BUCKET=<bucket name>
+```
+
+## Database Schema (Already Created in Supabase)
+The following tables exist with pgvector extension enabled:
+
+```sql
+-- documents: PDF metadata
+-- doc_chunks: Searchable text chunks with vector(1536) embeddings  
+-- tables_extracted: Extracted data tables (future use)
+-- observations: Daily analysis log
+```
+
+## Required Endpoints
+
+### 1. POST `/tool/ingest_document`
+**Purpose**: Process a PDF from S3 into searchable chunks
+
+**Input**:
+```json
+{
+  "s3_key": "raw/2025/08/newsletter-xyz.pdf",
+  "title": "Glassnode Week On-chain 31-2025",
+  "author": "Glassnode",
+  "kind": "newsletter",  // newsletter|masterclass|report
+  "published_date": "2025-08-01",
+  "tags": ["weekly", "on-chain", "glassnode"]
+}
+```
+
+**Process**:
+1. Download PDF from S3 using s3_key
+2. Extract text using PyPDF2/pdfplumber
+3. Chunk text into ~800 tokens with 100 token overlap
+4. Preserve section headers and page numbers in chunk metadata
+5. Generate embeddings for each chunk via OpenAI
+6. Store document record in `documents` table
+7. Store chunks with embeddings in `doc_chunks` table
+8. Return success with document_id and chunk count
+
+**Error Handling**: If PDF is image-heavy or extraction fails, log error but still create document record with flag "needs_ocr": true
+
+### 2. POST `/tool/search_knowledge`
+**Purpose**: Semantic search across all documents
+
+**Input**:
+```json
+{
+  "query": "What indicators suggest distribution phase?",
+  "k": 8,  // number of results
+  "filter_tags": ["on-chain"],  // optional
+  "filter_kind": "newsletter"  // optional
+}
+```
+
+**Process**:
+1. Generate embedding for query text
+2. Perform cosine similarity search in Supabase using pgvector
+3. Include document metadata (title, author, date) with each chunk
+4. Return chunks with relevance scores and citation info
+
+**Response**:
+```json
+{
+  "results": [
+    {
+      "text": "The MVRV ratio above 3.0 combined with...",
+      "document_title": "Glassnode Week On-chain 31-2025",
+      "author": "Glassnode",
+      "published_date": "2025-08-01",
+      "page": 4,
+      "section": "Distribution Signals",
+      "relevance_score": 0.89,
+      "document_id": "uuid-here"
+    }
+  ]
+}
+```
+
+### 3. GET `/tool/list_documents`
+**Purpose**: Browse document archive
+
+**Query Params**:
+- `kind`: Filter by document type
+- `tags`: Comma-separated tag filter
+- `search`: Text search in titles
+- `limit`: Max results (default 50)
+- `offset`: Pagination
+
+**Response**: List of documents with metadata, ordered by published_date DESC
+
+### 4. POST `/tool/log_observation`
+**Purpose**: Store daily analysis observations
+
+**Input**:
+```json
+{
+  "indicators": {"mvrv_z": 2.7, "sth_sopr": 1.01},
+  "states": {"mvrv_z": "neutral", "sth_sopr": "weak"},
+  "interpretation": "Market showing signs of...",
+  "counter_read": "However, exchange flows suggest...",
+  "bias_check": "Confirming my thesis that...",
+  "session_label": "Daily AM Analysis",
+  "referenced_documents": ["doc-uuid-1", "doc-uuid-2"]  // optional
+}
+```
+
+**Process**: 
+1. Store in `observations` table
+2. Link to referenced documents if provided
+3. Return observation_id with timestamp
+
+## Security & Performance
+
+### Rate Limiting
+- 60 requests per minute per IP (in-memory storage)
+- Special handling for ingestion endpoint (might need longer timeout)
+
+### CORS
+- Allow: `https://chatgpt.com`, `https://chat.openai.com`, `http://localhost:*`, Replit domains
+- Same pattern as existing Bitcoin proxy
+
+### Input Validation
+- Strict S3 key validation (no path traversal)
+- File size limits for PDFs (e.g., 50MB max)
+- Token limits for chunks (max 1000 tokens per chunk)
+- Sanitize all text before storage
+
+### Error Handling
+- Graceful handling of PDF extraction failures
+- Clear error messages for debugging
+- Log but don't fail on embedding generation issues
+- Return partial results when some chunks fail
+
+## Optimizations
+
+### Chunking Strategy
+- Use tiktoken to count tokens accurately (don't rely on word count)
+- Smart chunking: try to break at paragraph boundaries
+- Overlap: Last 100 tokens of previous chunk included in next
+- Metadata preservation: Track section headers, page numbers, lists
+
+### Embedding Efficiency  
+- Batch embedding requests (OpenAI accepts up to 100 texts per call)
+- Cache embeddings by text hash to avoid re-processing
+- Implement retry logic with exponential backoff
+
+### Search Quality
+- Use cosine similarity with pgvector
+- Boost recent documents slightly in ranking
+- Return diverse results (not all chunks from same document)
+- Include highlighted snippets showing query match context
+
+## Implementation Notes
+
+### PDF Processing
+```python
+# Prefer pdfplumber for better table handling
+import pdfplumber
+
+def extract_pdf_text(pdf_bytes):
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        text_by_page = []
+        for page_num, page in enumerate(pdf.pages, 1):
+            text = page.extract_text()
+            # Also check for tables
+            tables = page.extract_tables()
+            text_by_page.append({
+                "page": page_num,
+                "text": text,
+                "has_tables": len(tables) > 0
+            })
+    return text_by_page
+```
+
+### Chunking Logic
+```python
+def chunk_text(text, max_tokens=800, overlap_tokens=100):
+    # Use tiktoken for accurate token counting
+    encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+    tokens = encoding.encode(text)
+    
+    chunks = []
+    start = 0
+    while start < len(tokens):
+        end = min(start + max_tokens, len(tokens))
+        chunk_tokens = tokens[start:end]
+        chunks.append(encoding.decode(chunk_tokens))
+        start = end - overlap_tokens if end < len(tokens) else end
+    
+    return chunks
+```
+
+### Vector Search Query
+```python
+# Supabase Python client handles this elegantly
+response = supabase.rpc(
+    'match_documents',  # You'll create this function
+    {
+        'query_embedding': embedding,
+        'match_count': k,
+        'filter_tags': tags
+    }
+).execute()
+```
+
+## Testing Checklist
+1. **Ingest a simple text PDF** → Verify chunks created with embeddings
+2. **Search for specific concept** → Get relevant chunks with good scores  
+3. **Ingest PDF with tables** → Log table detection, continue processing
+4. **Search with filters** → Only matching documents returned
+5. **Log observation** → Stored with correct timestamp and structure
+6. **Rate limit test** → 61st request in a minute gets 429
+7. **Bad S3 key** → Clear error, no crash
+8. **Huge PDF** → Graceful handling or rejection
+
+## Success Metrics
+- Ingestion: < 30 seconds for typical 20-page newsletter
+- Search: < 2 seconds for semantic search across 1000+ documents  
+- Accuracy: Retrieved chunks actually answer the query
+- Reliability: 100% of text PDFs processable, graceful handling of edge cases
+
+## Future Enhancements (Don't Build Yet)
+- OCR support for image-heavy PDFs
+- Extract and index data tables separately
+- Chart/image extraction and description
+- Automatic weekly ingestion from known sources
+- Citation graph (which docs reference which)
+- Query expansion using synonyms
+- Hybrid search (semantic + keyword)
+
+## OpenAPI Schema for GPT Action
+Create a companion `gptschema.yaml` with all four endpoints documented for easy GPT integration. Match the style of the existing Bitcoin proxy schema.
+
+Build this incrementally - start with ingestion and search, test with a few PDFs, then add the observation logging. The goal is a simple, reliable knowledge store that makes your daily analysis smarter by having all historical context at your fingertips.
