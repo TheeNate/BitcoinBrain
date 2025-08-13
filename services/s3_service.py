@@ -95,6 +95,8 @@ class S3Service:
     
     def check_object_exists(self, s3_key: str) -> bool:
         """Check if object exists in S3"""
+        if not self.client:
+            raise ValueError("S3 service not configured. Please provide AWS credentials.")
         try:
             self.client.head_object(Bucket=settings.S3_BUCKET, Key=s3_key)
             return True

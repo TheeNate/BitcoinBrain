@@ -183,11 +183,15 @@ async def search_knowledge(request: SearchKnowledgeRequest):
             if isinstance(document_info, list) and document_info:
                 document_info = document_info[0]
             
+            # Ensure document_info is a dict, not a list
+            if not isinstance(document_info, dict):
+                document_info = {}
+            
             search_result = SearchResult(
                 text=result.get("text", ""),
-                document_title=document_info.get("title") or result.get("document_title", ""),
-                author=document_info.get("author") or result.get("document_author", ""),
-                published_date=document_info.get("published_date") or result.get("published_date", ""),
+                document_title=document_info.get("title", "") if isinstance(document_info, dict) else result.get("document_title", ""),
+                author=document_info.get("author", "") if isinstance(document_info, dict) else result.get("document_author", ""),
+                published_date=document_info.get("published_date", "") if isinstance(document_info, dict) else result.get("published_date", ""),
                 page=result.get("page"),
                 section=result.get("section"),
                 relevance_score=result.get("relevance_score", 0.0),

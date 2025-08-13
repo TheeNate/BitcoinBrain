@@ -6,6 +6,16 @@ The Bitcoin Knowledge Store API is a FastAPI service designed to ingest Bitcoin 
 
 Preferred communication style: Simple, everyday language.
 
+# Recent Changes
+
+## 2025-08-13 - Major Bug Fixes and Stability Improvements
+- Fixed all LSP type errors across the codebase with proper None client checks
+- Resolved AWS region parsing issue - added function to extract clean region codes from descriptive text
+- Fixed port conflict issues by properly restarting workflows
+- Ensured all services (Supabase, S3, OpenAI) initialize correctly
+- App now runs successfully with all endpoints operational
+- Added robust error handling for missing credentials with clear user guidance
+
 # System Architecture
 
 ## Backend Framework

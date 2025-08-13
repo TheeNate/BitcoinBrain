@@ -1,5 +1,23 @@
 import os
+import re
 from typing import Optional, List
+
+def _parse_aws_region(region_str: str) -> str:
+    """Parse AWS region from environment variable that may contain descriptive text"""
+    if not region_str:
+        return "us-west-2"
+    
+    # If it's already a clean region code, return it
+    if re.match(r'^[a-z]{2}-[a-z]+-\d+$', region_str):
+        return region_str
+    
+    # Extract region code from descriptive text like "US East (Ohio) us-east-2"
+    match = re.search(r'([a-z]{2}-[a-z]+-\d+)', region_str)
+    if match:
+        return match.group(1)
+    
+    # Fallback to default region
+    return "us-west-2"
 
 class Settings:
     """Application configuration settings"""
@@ -16,7 +34,7 @@ class Settings:
     # AWS configuration
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
-    AWS_REGION: str = os.getenv("AWS_REGION", "us-west-2")
+    AWS_REGION: str = _parse_aws_region(os.getenv("AWS_REGION", "us-west-2"))
     S3_BUCKET: str = os.getenv("S3_BUCKET", "")
     
     # Processing configuration

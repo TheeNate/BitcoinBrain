@@ -29,7 +29,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return real_ip.strip()
         
         # Fall back to direct client IP
-        if hasattr(request.client, "host"):
+        if request.client and hasattr(request.client, "host"):
             return request.client.host
         
         return "unknown"

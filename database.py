@@ -44,6 +44,8 @@ class SupabaseClient:
     
     async def insert_chunks(self, chunks_data: List[Dict[str, Any]]) -> int:
         """Insert document chunks and return count"""
+        if not self.client:
+            raise ValueError("Database service not configured. Please provide Supabase credentials.")
         try:
             result = self.client.table("doc_chunks").insert(chunks_data).execute()
             chunk_count = len(result.data)
@@ -91,6 +93,8 @@ class SupabaseClient:
         filter_kind: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Basic search fallback using Supabase client"""
+        if not self.client:
+            raise ValueError("Database service not configured. Please provide Supabase credentials.")
         try:
             query = self.client.table("doc_chunks").select("""
                 *,
@@ -130,6 +134,8 @@ class SupabaseClient:
         offset: int = 0
     ) -> List[Dict[str, Any]]:
         """List documents with filtering"""
+        if not self.client:
+            raise ValueError("Database service not configured. Please provide Supabase credentials.")
         try:
             query = self.client.table("documents").select("*")
             
@@ -152,6 +158,8 @@ class SupabaseClient:
     
     async def insert_observation(self, observation_data: Dict[str, Any]) -> str:
         """Insert observation and return observation_id"""
+        if not self.client:
+            raise ValueError("Database service not configured. Please provide Supabase credentials.")
         try:
             result = self.client.table("observations").insert(observation_data).execute()
             observation_id = result.data[0]["id"]
@@ -163,6 +171,8 @@ class SupabaseClient:
     
     async def update_document_status(self, document_id: str, status: Dict[str, Any]):
         """Update document processing status"""
+        if not self.client:
+            raise ValueError("Database service not configured. Please provide Supabase credentials.")
         try:
             self.client.table("documents").update(status).eq("id", document_id).execute()
             logger.info(f"Document {document_id} status updated")
